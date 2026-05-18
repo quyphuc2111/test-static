@@ -9,11 +9,13 @@ WORKDIR /app
 # Cài đặt pnpm
 RUN npm install -g pnpm
 
-# Copy package files (kèm .npmrc để pnpm hoist Prisma packages — xem .npmrc)
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-
 # Install dependencies
 FROM base AS deps
+WORKDIR /app
+# Copy package manifests trước để tận dụng cache layer.
+# Dùng glob `.npmrc*` để file `.npmrc` là optional — nếu repo không có thì COPY vẫn pass
+# (BuildKit yêu cầu ít nhất 1 file match; package.json luôn tồn tại nên an toàn).
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc* ./
 RUN pnpm install --frozen-lockfile
 
 # Build stage
