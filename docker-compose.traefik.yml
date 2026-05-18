@@ -1,0 +1,111 @@
+# =====================================================================================
+# Production compose qua Traefik (TLS letsencrypt) — domain zentools.zenadev.online
+# Sử dụng:
+#   docker compose -f docker-compose.traefik.yml up -d --build
+#
+# Yêu cầu hạ tầng có sẵn trên host:
+#   - Traefik đang chạy, gắn vào external network tên `proxy`.
+#   - Traefik đã cấu hình entrypoint `websecure` (443) và certresolver `letsencrypt`.
+#
+# Khác biệt so với docker-compose.yml (dev local):
+#   - Không publish port app ra host (Traefik xử lý ingress).
+#   - App + MySQL chia sẻ network nội bộ `app-internal`; chỉ app gắn thêm `proxy`.
+#   - Build args truyền NEXT_PUBLIC_* để client bundle gọi đúng domain public
+#     (Next.js inline biến NEXT_PUBLIC_* tại lúc build, không thể đổi ở runtime).
+# =====================================================================================
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: zentools-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-appdb}
+      MYSQL_USER: ${MYSQL_USER:-appuser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-apppass}
+    command:
+      - "--default-authentication-plugin=mysql_native_password"
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - app-internal
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Để rỗng → src/constants/apiUrl.ts fallback sang relative "/api"
+        # (an toàn nhất khi đứng sau reverse proxy; tránh hard-code domain vào bundle).
+        NEXT_PUBLIC_BASE_URL: ""
+        NEXT_PUBLIC_API_BASE_URL: ""
+        # CSRF/origin check cần biết domain public — xem src/lib/csrf.ts.
+        NEXT_PUBLIC_APP_URL: "https://zentools.zenadev.online"
+    container_name: zentools-app
+    restart: unless-stopped
+    expose:
+      # Next.js standalone listen ở PORT=3000 (xem Dockerfile). Không đổi sang 80
+      # vì sẽ phải chạy với quyền root trong container — Traefik route tới 3000 trực tiếp.
+      - "3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=mysql://${MYSQL_USER:-appuser}:${MYSQL_PASSWORD:-apppass}@mysql:3306/${MYSQL_DATABASE:-appdb}
+      # Bắt buộc đổi sang giá trị thực trước khi deploy production.
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required}
+      - NEXTAUTH_URL=https://zentools.zenadev.online
+      - SESSION_PASSWORD=${SESSION_PASSWORD:?SESSION_PASSWORD must be at least 32 chars}
+      - SESSION_COOKIE_NAME=${SESSION_COOKIE_NAME:-bkt_session}
+      - NEXT_PUBLIC_APP_URL=https://zentools.zenadev.online
+      # Tắt seed sau lần deploy đầu để không re-create test users mỗi lần restart.
+      # Lần đầu deploy: comment dòng dưới (hoặc set =true) để admin/dev/tester được tạo.
+      - RUN_SEED=${RUN_SEED:-false}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      # Uploads phải persist qua các lần rebuild image.
+      - ./uploads:/app/public/uploads
+    networks:
+      - app-internal
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      # Router HTTPS
+      - "traefik.http.routers.zentools.rule=Host(`zentools.zenadev.online`)"
+      - "traefik.http.routers.zentools.entrypoints=websecure"
+      - "traefik.http.routers.zentools.tls=true"
+      - "traefik.http.routers.zentools.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.zentools.service=zentools"
+      # Service trỏ tới port nội bộ thực tế của Next.js (3000), KHÔNG phải 80.
+      - "traefik.http.services.zentools.loadbalancer.server.port=3000"
+      # (Tuỳ chọn) Redirect HTTP -> HTTPS nếu Traefik có entrypoint `web` (80).
+      - "traefik.http.routers.zentools-http.rule=Host(`zentools.zenadev.online`)"
+      - "traefik.http.routers.zentools-http.entrypoints=web"
+      - "traefik.http.routers.zentools-http.middlewares=zentools-https-redirect"
+      - "traefik.http.middlewares.zentools-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.zentools-https-redirect.redirectscheme.permanent=true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  mysql_data:
+
+networks:
+  # Network nội bộ chỉ giữa app <-> mysql, không expose ra Traefik.
+  app-internal:
+    driver: bridge
+  # Network của Traefik, đã được tạo sẵn ngoài compose này.
+  proxy:
+    external: true
