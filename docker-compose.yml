@@ -1,0 +1,60 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: scs-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: appdb
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: apppass
+    ports:
+      - "3307:3306"
+    command: ["--default-authentication-plugin=mysql_native_password", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./prisma:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - app-network
+
+  # app:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: scs-app
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3099:3000"
+  #   environment:
+  #     - NODE_ENV=production
+  #     - DATABASE_URL=mysql://appuser:apppass@mysql:3306/appdb
+  #     - NEXTAUTH_SECRET=your-nextauth-secret-here
+  #     - NEXTAUTH_URL=http://localhost:3099
+  #     - SESSION_PASSWORD=your-session-password-here-must-be-at-least-32-characters-long
+  #     - SESSION_COOKIE_NAME=bkt_session
+  #   depends_on:
+  #     mysql:
+  #       condition: service_healthy
+  #   networks:
+  #     - app-network
+  #   volumes:
+  #     - ./uploads:/app/uploads
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 40s
+
+volumes:
+  mysql_data:
+
+networks:
+  app-network:
+    driver: bridge
+

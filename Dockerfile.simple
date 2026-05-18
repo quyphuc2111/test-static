@@ -1,0 +1,55 @@
+# Dockerfile đơn giản cho Next.js standalone
+FROM node:20-alpine AS base
+
+# Cài đặt dependencies cần thiết
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+# Cài đặt pnpm
+RUN npm install -g pnpm
+
+# Copy package files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+# Install dependencies
+FROM base AS deps
+RUN pnpm install --frozen-lockfile
+
+# Build stage
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Generate Prisma client
+RUN pnpm prisma:generate
+
+# Build ứng dụng Next.js
+ENV NEXT_TELEMETRY_DISABLED 1
+RUN pnpm build
+
+# Production stage - sử dụng Node.js image nhỏ hơn
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV production
+ENV NEXT_TELEMETRY_DISABLED 1
+
+# Tạo user non-root
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Copy built application
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+
+USER nextjs
+
+EXPOSE 3000
+
+ENV PORT 3000
+ENV HOSTNAME "0.0.0.0"
+
+CMD ["node", "server.js"]
+
