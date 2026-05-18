@@ -17,11 +17,21 @@ export type AppSession = {
   csrfToken?: string
 }
 
+// Cảnh báo nếu chạy production mà thiếu SESSION_PASSWORD — bắt buộc phải set
+if (process.env.NODE_ENV === "production" && !process.env.SESSION_PASSWORD) {
+  // eslint-disable-next-line no-console
+  console.error(
+    "[session] FATAL: SESSION_PASSWORD env var không được set trong production. " +
+    "Hãy set một chuỗi tối thiểu 32 ký tự trong môi trường runtime (Docker/Cloudflare/etc)."
+  )
+}
+
 export const sessionOptions: SessionOptions = {
   cookieName: process.env.SESSION_COOKIE_NAME || "bkt_session",
   password: process.env.SESSION_PASSWORD || "dev-secret-change-me-dev-secret-change-me",
   cookieOptions: {
-    secure: false, // Set to false for development
+    // Auto-enable secure trong production (Cloudflare/HTTPS) — tránh cookie bị leak qua HTTP
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     httpOnly: true,
     path: "/",

@@ -9,7 +9,7 @@ services:
       MYSQL_USER: appuser
       MYSQL_PASSWORD: apppass
     ports:
-      - "3307:3306"
+      - "3311:3306"
     command: ["--default-authentication-plugin=mysql_native_password", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
     volumes:
       - mysql_data:/var/lib/mysql
@@ -22,34 +22,40 @@ services:
     networks:
       - app-network
 
-  # app:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   container_name: scs-app
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3099:3000"
-  #   environment:
-  #     - NODE_ENV=production
-  #     - DATABASE_URL=mysql://appuser:apppass@mysql:3306/appdb
-  #     - NEXTAUTH_SECRET=your-nextauth-secret-here
-  #     - NEXTAUTH_URL=http://localhost:3099
-  #     - SESSION_PASSWORD=your-session-password-here-must-be-at-least-32-characters-long
-  #     - SESSION_COOKIE_NAME=bkt_session
-  #   depends_on:
-  #     mysql:
-  #       condition: service_healthy
-  #   networks:
-  #     - app-network
-  #   volumes:
-  #     - ./uploads:/app/uploads
-    # healthcheck:
-    #   test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
-    #   interval: 30s
-    #   timeout: 10s
-    #   retries: 3
-    #   start_period: 40s
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scs-app
+    restart: unless-stopped
+    ports:
+      - "3099:3000"
+    environment:
+      - NODE_ENV=production
+      # Dùng cổng container nội bộ (3306), không phải cổng publish ra host (3311).
+      # Trong cùng Docker network, app gọi service `mysql` qua đúng cổng MySQL gốc.
+      - DATABASE_URL=mysql://appuser:apppass@mysql:3306/appdb
+      - NEXTAUTH_SECRET=your-nextauth-secret-here
+      - NEXTAUTH_URL=http://localhost:3099
+      - SESSION_PASSWORD=your-session-password-here-must-be-at-least-32-characters-long
+      - SESSION_COOKIE_NAME=bkt_session
+      # Bắt buộc khi đứng sau Cloudflare để CSRF/origin check hoạt động đúng
+      - NEXT_PUBLIC_APP_URL=https://your-domain.example.com
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - app-network
+    volumes:
+      # Quan trọng: code đọc/ghi file ở /app/public/uploads (xem upload route)
+      # → mount vào đúng path đó để dữ liệu persist qua mỗi lần rebuild image.
+      - ./uploads:/app/public/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 volumes:
   mysql_data:

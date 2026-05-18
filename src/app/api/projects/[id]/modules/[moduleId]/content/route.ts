@@ -5,12 +5,18 @@ import { PermissionName, ShareStatus } from "@prisma/client"
 import { hasPermission as checkPermission, hasAnyPermission } from "@/lib/permissions"
 import { logContentAction } from "@/lib/audit"
 import { Prisma } from "@prisma/client"
-import { writeFile, mkdir, rm } from "fs/promises"
+import { mkdir, rm } from "fs/promises"
 import { join } from "path"
 import { existsSync } from "fs"
 import { SCORMService } from "@/services/scormService"
 import { contentEventBus } from "@/lib/content-events"
-import { sanitizeVietnameseString, extractZipToDir, scanZipEntries } from "@/lib/file-utils"
+import {
+  sanitizeVietnameseString,
+  extractZipToDir,
+  scanZipEntries,
+  streamFileToDisk,
+  cleanupTempZip,
+} from "@/lib/file-utils"
 
 export const maxDuration = 300 // 5 minutes
 export const dynamic = 'force-dynamic'
@@ -253,17 +259,24 @@ export async function POST(
       await mkdir(uploadDir, { recursive: true })
     }
 
-    // Save ZIP file temporarily
-    const tempZipPath = join(uploadDir, file.name)
-    const bytes = await file.arrayBuffer()
-    const buffer = Buffer.from(bytes)
-    await writeFile(tempZipPath, buffer)
+    // Stream ZIP file to disk — KHÔNG load toàn bộ file vào RAM (tránh OOM trên container)
+    const tempZipPath = join(uploadDir, `_tmp_${timestamp}_${file.name}`)
+    try {
+      await streamFileToDisk(file, tempZipPath)
+    } catch (streamError) {
+      await rm(uploadDir, { recursive: true, force: true }).catch(() => {})
+      console.error("Error streaming file to disk:", streamError)
+      return NextResponse.json(
+        { error: "Failed to save uploaded file" },
+        { status: 500 }
+      )
+    }
 
     // Validate: HTML type must have exactly 1 HTML file
     if (contentType === "FILE_ZIP_HTML") {
       const { htmlFiles: zipHtmlFiles } = await scanZipEntries(tempZipPath)
       if (zipHtmlFiles.length === 0) {
-        await require('fs').promises.unlink(tempZipPath)
+        await cleanupTempZip(tempZipPath)
         await rm(uploadDir, { recursive: true, force: true }).catch(() => {})
         return NextResponse.json(
           { error: "File ZIP không chứa file HTML nào." },
@@ -271,7 +284,7 @@ export async function POST(
         )
       }
       if (zipHtmlFiles.length > 1) {
-        await require('fs').promises.unlink(tempZipPath)
+        await cleanupTempZip(tempZipPath)
         await rm(uploadDir, { recursive: true, force: true }).catch(() => {})
         return NextResponse.json(
           { error: `File ZIP chứa ${zipHtmlFiles.length} file HTML. Chỉ được phép 1 file HTML duy nhất.`, htmlFiles: zipHtmlFiles },
@@ -285,15 +298,16 @@ export async function POST(
       console.log("Starting ZIP extraction...")
       console.log("ZIP path:", tempZipPath)
       console.log("Extract to:", uploadDir)
-      
+
       await extractZipToDir(tempZipPath, uploadDir)
       console.log("ZIP extraction completed")
-      
+
       // Remove temporary ZIP file
-      await require('fs').promises.unlink(tempZipPath)
+      await cleanupTempZip(tempZipPath)
       console.log("Temporary ZIP file removed")
     } catch (extractError) {
       console.error("Error extracting ZIP:", extractError)
+      await cleanupTempZip(tempZipPath)
       const errorMessage = extractError instanceof Error ? extractError.message : "Unknown error"
       return NextResponse.json(
         { error: "Failed to extract ZIP file", details: errorMessage },

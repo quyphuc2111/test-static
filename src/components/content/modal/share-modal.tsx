@@ -23,6 +23,7 @@ import {
   Trash2,
   Users,
   Search,
+  Check
 } from 'lucide-react';
 import {
   useModuleShares,

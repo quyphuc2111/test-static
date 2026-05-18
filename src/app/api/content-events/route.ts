@@ -1,9 +1,16 @@
 import { contentEventBus, ContentStatusEvent } from "@/lib/content-events"
+import { getSession } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 export async function GET() {
+  // Yêu cầu auth — tránh public broadcast event của system tới user chưa login
+  const session = await getSession()
+  if (!session?.user?.id) {
+    return new Response("Unauthorized", { status: 401 })
+  }
+
   const encoder = new TextEncoder()
   let unsubscribe: (() => void) | null = null
   let heartbeat: NodeJS.Timeout | null = null
@@ -44,6 +51,7 @@ export async function GET() {
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
+      "Content-Encoding": "none",
     },
   })
 }

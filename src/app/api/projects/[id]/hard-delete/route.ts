@@ -57,18 +57,34 @@ export async function DELETE(
     }
 
     // Xóa file vật lý trên disk
+    // Lưu ý: contentUrl có format "/uploads/content/..." → file thật ở "public/uploads/content/..."
     const allContent = [...project.contentData, ...project.modules.flatMap(m => m.contentData)]
     for (const content of allContent) {
       if (content.contentUrl) {
         try {
-          const contentDir = path.join(process.cwd(), "static", path.dirname(content.contentUrl))
+          // contentUrl là path tới directory (đã extract), không phải file đơn lẻ
+          // → xóa luôn directory thay vì path.dirname(...)
+          const normalized = content.contentUrl.startsWith('/')
+            ? content.contentUrl.slice(1)
+            : content.contentUrl
+          const contentDir = path.join(process.cwd(), "public", normalized)
           await fs.rm(contentDir, { recursive: true, force: true })
         } catch { /* ignore */ }
       }
-      // Xóa thư mục versions
+      // Xóa thư mục versions (đặt cùng cấp với content directory)
       try {
-        const versionsDir = path.join(process.cwd(), "static", "uploads", "content", `_versions_${content.id}`)
-        await fs.rm(versionsDir, { recursive: true, force: true })
+        if (content.contentUrl) {
+          const normalized = content.contentUrl.startsWith('/')
+            ? content.contentUrl.slice(1)
+            : content.contentUrl
+          const versionsDir = path.join(
+            process.cwd(),
+            "public",
+            path.dirname(normalized),
+            `_versions_${content.id}`
+          )
+          await fs.rm(versionsDir, { recursive: true, force: true })
+        }
       } catch { /* ignore */ }
     }
 

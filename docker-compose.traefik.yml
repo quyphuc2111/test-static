@@ -1,5 +1,5 @@
 # =====================================================================================
-# Production compose qua Traefik (TLS letsencrypt) — domain zentools.zenadev.online
+# Production compose qua Traefik (TLS letsencrypt) — domain static.zenadev.online
 # Sử dụng:
 #   docker compose -f docker-compose.traefik.yml up -d --build
 #
@@ -16,7 +16,7 @@
 services:
   mysql:
     image: mysql:8.0
-    container_name: zentools-mysql
+    container_name: static-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
@@ -47,8 +47,8 @@ services:
         NEXT_PUBLIC_BASE_URL: ""
         NEXT_PUBLIC_API_BASE_URL: ""
         # CSRF/origin check cần biết domain public — xem src/lib/csrf.ts.
-        NEXT_PUBLIC_APP_URL: "https://zentools.zenadev.online"
-    container_name: zentools-app
+        NEXT_PUBLIC_APP_URL: "https://static.zenadev.online"
+    container_name: static-app
     restart: unless-stopped
     expose:
       # Next.js standalone listen ở PORT=3000 (xem Dockerfile). Không đổi sang 80
@@ -59,10 +59,10 @@ services:
       - DATABASE_URL=mysql://${MYSQL_USER:-appuser}:${MYSQL_PASSWORD:-apppass}@mysql:3306/${MYSQL_DATABASE:-appdb}
       # Bắt buộc đổi sang giá trị thực trước khi deploy production.
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required}
-      - NEXTAUTH_URL=https://zentools.zenadev.online
+      - NEXTAUTH_URL=https://static.zenadev.online
       - SESSION_PASSWORD=${SESSION_PASSWORD:?SESSION_PASSWORD must be at least 32 chars}
       - SESSION_COOKIE_NAME=${SESSION_COOKIE_NAME:-bkt_session}
-      - NEXT_PUBLIC_APP_URL=https://zentools.zenadev.online
+      - NEXT_PUBLIC_APP_URL=https://static.zenadev.online
       # Tắt seed sau lần deploy đầu để không re-create test users mỗi lần restart.
       # Lần đầu deploy: comment dòng dưới (hoặc set =true) để admin/dev/tester được tạo.
       - RUN_SEED=${RUN_SEED:-false}
@@ -79,19 +79,19 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       # Router HTTPS
-      - "traefik.http.routers.zentools.rule=Host(`zentools.zenadev.online`)"
-      - "traefik.http.routers.zentools.entrypoints=websecure"
-      - "traefik.http.routers.zentools.tls=true"
-      - "traefik.http.routers.zentools.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.zentools.service=zentools"
+      - "traefik.http.routers.static.rule=Host(`static.zenadev.online`)"
+      - "traefik.http.routers.static.entrypoints=websecure"
+      - "traefik.http.routers.static.tls=true"
+      - "traefik.http.routers.static.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.static.service=static"
       # Service trỏ tới port nội bộ thực tế của Next.js (3000), KHÔNG phải 80.
-      - "traefik.http.services.zentools.loadbalancer.server.port=3000"
+      - "traefik.http.services.static.loadbalancer.server.port=3000"
       # (Tuỳ chọn) Redirect HTTP -> HTTPS nếu Traefik có entrypoint `web` (80).
-      - "traefik.http.routers.zentools-http.rule=Host(`zentools.zenadev.online`)"
-      - "traefik.http.routers.zentools-http.entrypoints=web"
-      - "traefik.http.routers.zentools-http.middlewares=zentools-https-redirect"
-      - "traefik.http.middlewares.zentools-https-redirect.redirectscheme.scheme=https"
-      - "traefik.http.middlewares.zentools-https-redirect.redirectscheme.permanent=true"
+      - "traefik.http.routers.static-http.rule=Host(`static.zenadev.online`)"
+      - "traefik.http.routers.static-http.entrypoints=web"
+      - "traefik.http.routers.static-http.middlewares=static-https-redirect"
+      - "traefik.http.middlewares.static-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.static-https-redirect.redirectscheme.permanent=true"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
       interval: 30s

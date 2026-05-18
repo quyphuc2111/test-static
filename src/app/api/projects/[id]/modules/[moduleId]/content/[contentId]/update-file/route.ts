@@ -67,7 +67,7 @@ export async function POST(
 
     const isOwner = Number(content.owner?.id ?? NaN) === Number(session.user.id)
     const hasManageAllContent = await checkPermission(PermissionName.MANAGE_ALL_CONTENT, session.user.id)
-    const hasEditViaShare = !!sharedContent || !!sharedModule
+    const hasEditViaShare = !!sharedContent 
 
     if (!isOwner && !hasManageAllContent && !hasEditViaShare) {
       return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 })

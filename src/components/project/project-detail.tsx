@@ -653,7 +653,7 @@ export function ProjectDetail() {
                             </div>
                           ) : (() => {
                             const isOwner = Number(content.owner?.id) === Number(user?.id);
-                            const isAdmin = (user?.roles || []).includes("ADMINISTRATOR");
+                            const isAdmin = (user?.roles || []).some(role => role.name === "ADMINISTRATOR");
                             const canManageAll = hasPermission(PermissionName.MANAGE_ALL_CONTENT);
                             const canManageOwn = hasPermission(PermissionName.MANAGE_OWN_CONTENT);
                             const canEditGlobal = hasPermission(PermissionName.EDIT_CONTENT);
@@ -897,7 +897,7 @@ export function ProjectDetail() {
       )}
       {versionHistoryContent && (() => {
         const isOwner = Number(versionHistoryContent.owner?.id) === Number(user?.id);
-        const isAdmin = (user?.roles || []).includes("ADMINISTRATOR");
+        const isAdmin = (user?.roles || []).some(role => role.name === "ADMINISTRATOR");
         const canManageAll = hasPermission(PermissionName.MANAGE_ALL_CONTENT);
         const canManageOwn = hasPermission(PermissionName.MANAGE_OWN_CONTENT);
         const canEditGlobal = hasPermission(PermissionName.EDIT_CONTENT);
